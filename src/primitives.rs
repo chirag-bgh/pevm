@@ -71,7 +71,7 @@ pub enum TransactionParsingError {
 // https://github.com/paradigmxyz/reth/blob/280aaaedc4699c14a5b6e88f25d929fe22642fa3/crates/primitives/src/revm/env.rs#L234-L339
 // https://github.com/paradigmxyz/reth/blob/280aaaedc4699c14a5b6e88f25d929fe22642fa3/crates/primitives/src/alloy_compat.rs#L112-L233
 // TODO: Properly test this.
-pub(crate) fn get_tx_env(tx: Transaction) -> Result<TxEnv, TransactionParsingError> {
+pub fn get_tx_env(tx: Transaction) -> Result<TxEnv, TransactionParsingError> {
     Ok(TxEnv {
         caller: tx.from,
         gas_limit: tx

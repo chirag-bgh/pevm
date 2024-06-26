@@ -10,11 +10,10 @@ use alloy_chains::Chain;
 use alloy_primitives::{Address, U256};
 use alloy_rpc_types::{Block, BlockTransactions};
 use defer_drop::DeferDrop;
-use revm::{
-    db::CacheDB,
-    primitives::{BlockEnv, SpecId, TransactTo, TxEnv},
-    DatabaseCommit,
-};
+use revm::{db::CacheDB, primitives::SpecId, DatabaseCommit};
+
+pub use revm::primitives::{BlobExcessGasAndPrice, BlockEnv, TransactTo, TxEnv};
+pub use SpecId::CANCUN;
 
 use crate::{
     mv_memory::MvMemory,
@@ -48,6 +47,8 @@ pub enum PevmError {
 
 /// Execution result of a block
 pub type PevmResult = Result<Vec<PevmTxExecutionResult>, PevmError>;
+
+pub type PResult = Result<Vec<PevmTxExecutionResult>, PevmError>;
 
 // caller to choose
 // the handling behaviour when a transaction's EVM execution fails.
