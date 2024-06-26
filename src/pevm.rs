@@ -49,6 +49,26 @@ pub enum PevmError {
 /// Execution result of a block
 pub type PevmResult = Result<Vec<PevmTxExecutionResult>, PevmError>;
 
+// caller to choose
+// the handling behaviour when a transaction's EVM execution fails.
+// Parallel block builders would like to exclude such transaction,
+// verifiers may want to exit early to save CPU cycles, while testers
+// may want to collect all execution results. We are exiting early as
+// the default behaviour for now. Also, be aware of a potential deadlock
+// in the scheduler's next task loop when an error occurs.
+/// User type for PEVM consumers.
+///
+/// This can be Block builders, verifiers, testers
+#[derive(Debug)]
+pub enum PevmUserType {
+    /// Exclude transactions with EVM execution errors.
+    BlockBuilder,
+    /// Exit early when a transaction has an EVM execution error.
+    Verifier,
+    /// Collect all execution results.
+    Testers,
+}
+
 /// Execute an Alloy block, which is becoming the "standard" format in Rust.
 /// TODO: Better error handling.
 pub fn execute<S: Storage + Send + Sync>(
@@ -57,6 +77,7 @@ pub fn execute<S: Storage + Send + Sync>(
     block: Block,
     concurrency_level: NonZeroUsize,
     force_sequential: bool,
+    user_type: PevmUserType,
 ) -> PevmResult {
     let Some(spec_id) = get_block_spec(&block.header) else {
         return Err(PevmError::UnknownBlockSpec);
@@ -83,6 +104,7 @@ pub fn execute<S: Storage + Send + Sync>(
             block_env,
             tx_envs,
             concurrency_level,
+            user_type,
         )
     }
 }
@@ -97,6 +119,7 @@ pub fn execute_revm<S: Storage + Send + Sync>(
     block_env: BlockEnv,
     txs: Vec<TxEnv>,
     concurrency_level: NonZeroUsize,
+    user_type: PevmUserType,
 ) -> PevmResult {
     if txs.is_empty() {
         return Ok(Vec::new());
@@ -140,7 +163,13 @@ pub fn execute_revm<S: Storage + Send + Sync>(
     // threads like this. For instance, to have a dedicated thread (pool) for cleanup.
     let mv_memory = DeferDrop::new(MvMemory::new(block_size, estimated_locations));
     let vm = Vm::new(
-        &hasher, &storage, &mv_memory, chain, spec_id, block_env, txs,
+        &hasher,
+        &storage,
+        &mv_memory,
+        chain,
+        spec_id,
+        block_env.clone(),
+        txs,
     );
 
     let mut execution_error = OnceLock::new();
@@ -166,15 +195,18 @@ pub fn execute_revm<S: Storage + Send + Sync>(
                         }
                     };
 
-                    // TODO: Have different functions or an enum for the caller to choose
-                    // the handling behaviour when a transaction's EVM execution fails.
-                    // Parallel block builders would like to exclude such transaction,
-                    // verifiers may want to exit early to save CPU cycles, while testers
-                    // may want to collect all execution results. We are exiting early as
-                    // the default behaviour for now. Also, be aware of a potential deadlock
-                    // in the scheduler's next task loop when an error occurs.
                     if execution_error.get().is_some() {
-                        break;
+                        match user_type {
+                            PevmUserType::BlockBuilder => {
+                                continue;
+                            }
+                            PevmUserType::Verifier => {
+                                break;
+                            }
+                            PevmUserType::Testers => {
+                                unimplemented!()
+                            }
+                        }
                     }
 
                     if task.is_none() {
@@ -204,6 +236,18 @@ pub fn execute_revm<S: Storage + Send + Sync>(
     let mut cumulative_gas_used: u128 = 0;
     for (mutex, (_, beneficiary_value)) in execution_results.into_iter().zip(beneficiary_values) {
         let mut execution_result = mutex.into_inner().unwrap().unwrap();
+
+        // do this if user type is BlockBuilder
+        match user_type {
+            PevmUserType::BlockBuilder => {
+                if cumulative_gas_used + execution_result.receipt.cumulative_gas_used
+                    > block_env.clone().gas_limit.to_string().parse().unwrap()
+                {
+                    continue;
+                }
+            }
+            _ => {}
+        }
 
         // Cumulative gas
         cumulative_gas_used += execution_result.receipt.cumulative_gas_used;

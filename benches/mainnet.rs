@@ -8,6 +8,7 @@ use std::{num::NonZeroUsize, thread};
 
 use alloy_chains::Chain;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use pevm::PevmUserType;
 
 // Better project structure
 #[path = "../tests/common/mod.rs"]
@@ -40,6 +41,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     black_box(block.clone()),
                     black_box(concurrency_level),
                     black_box(true),
+                    black_box(PevmUserType::Verifier),
                 )
             })
         });
@@ -51,6 +53,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     black_box(block.clone()),
                     black_box(concurrency_level),
                     black_box(false),
+                    black_box(PevmUserType::Verifier),
                 )
             })
         });

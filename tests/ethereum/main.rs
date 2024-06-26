@@ -138,6 +138,7 @@ fn run_test_unit(path: &Path, unit: &TestUnit) {
                     build_block_env(&unit.env),
                     vec![tx_env.unwrap()],
                     NonZeroUsize::MIN,
+                    pevm::PevmUserType::Verifier,
                 ),
             ) {
                 // EIP-2681

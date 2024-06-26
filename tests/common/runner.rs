@@ -42,6 +42,7 @@ pub fn test_execute_revm<S: Storage + Clone + Send + Sync>(storage: S, txs: Vec<
             BlockEnv::default(),
             txs,
             concurrency_level,
+            pevm::PevmUserType::Verifier,
         ),
     );
 }
@@ -101,8 +102,16 @@ pub fn test_execute_alloy<S: Storage + Clone + Send + Sync>(
         block.clone(),
         concurrency_level,
         true,
+        pevm::PevmUserType::Verifier,
     );
-    let parallel_result = pevm::execute(storage, chain, block.clone(), concurrency_level, false);
+    let parallel_result = pevm::execute(
+        storage,
+        chain,
+        block.clone(),
+        concurrency_level,
+        false,
+        pevm::PevmUserType::Verifier,
+    );
     assert_execution_result(&sequential_result, &parallel_result);
 
     if must_match_block_header {
