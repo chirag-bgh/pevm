@@ -216,6 +216,8 @@ pub use pevm::{
     PevmResult, PevmUserType, TransactTo, TxEnv, CANCUN,
 };
 
+pub use ahash::AHashMap;
+
 mod mv_memory;
 mod primitives;
 pub use primitives::{get_block_spec, get_tx_env};
@@ -223,4 +225,5 @@ mod scheduler;
 mod storage;
 pub use storage::{AccountBasic, EvmAccount, InMemoryStorage, RpcStorage, Storage, StorageWrapper};
 mod vm;
+pub use storage::EvmCode;
 pub use vm::{ExecutionError, PevmTxExecutionResult};

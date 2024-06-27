@@ -1,5 +1,3 @@
-use std::{fmt::Debug, sync::Arc};
-
 use ahash::AHashMap;
 use alloy_primitives::{Address, Bytes, B256, U256};
 use bitvec::vec::BitVec;
@@ -9,6 +7,7 @@ use revm::{
     primitives::{Account, AccountInfo, Bytecode, JumpTable},
     DatabaseRef,
 };
+use std::{fmt::Debug, sync::Arc};
 
 /// An EVM account.
 // TODO: Flatten [AccountBasic] or more ideally, replace this with an Alloy type.
@@ -131,11 +130,11 @@ impl From<AccountInfo> for AccountBasic {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct EvmCode {
     /// Bytecode with 32 zero bytes padding
-    bytecode: Bytes,
+    pub bytecode: Bytes,
     /// Original bytes length
-    original_len: usize,
+    pub original_len: usize,
     /// Jump table.
-    jump_table: Arc<BitVec<u8>>,
+    pub jump_table: Arc<BitVec<u8>>,
 }
 
 impl From<EvmCode> for Bytecode {

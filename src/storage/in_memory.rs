@@ -1,7 +1,6 @@
-use std::{collections::HashMap, fmt::Debug};
-
 use ahash::AHashMap;
 use alloy_primitives::{keccak256, Address, B256, U256};
+use std::{collections::HashMap, fmt::Debug};
 
 use super::EvmCode;
 use crate::{AccountBasic, BuildAddressHasher, EvmAccount, Storage};
