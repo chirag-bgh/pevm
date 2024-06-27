@@ -48,8 +48,6 @@ pub enum PevmError {
 /// Execution result of a block
 pub type PevmResult = Result<Vec<PevmTxExecutionResult>, PevmError>;
 
-pub type PResult = Result<Vec<PevmTxExecutionResult>, PevmError>;
-
 // caller to choose
 // the handling behaviour when a transaction's EVM execution fails.
 // Parallel block builders would like to exclude such transaction,

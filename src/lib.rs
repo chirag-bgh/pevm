@@ -212,9 +212,10 @@ macro_rules! index_mutex {
 
 mod pevm;
 pub use pevm::{
-    execute, execute_revm, execute_revm_sequential, BlobExcessGasAndPrice, BlockEnv, PResult,
-    PevmError, PevmResult, PevmUserType, TransactTo, TxEnv, CANCUN,
+    execute, execute_revm, execute_revm_sequential, BlobExcessGasAndPrice, BlockEnv, PevmError,
+    PevmResult, PevmUserType, TransactTo, TxEnv, CANCUN,
 };
+
 mod mv_memory;
 mod primitives;
 pub use primitives::{get_block_spec, get_tx_env};
