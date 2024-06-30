@@ -494,7 +494,9 @@ fn try_execute<S: Storage>(
             }
             VmExecutionResult::ExecutionError(err) => {
                 // TODO: Better error handling
-                execution_error.set(err).unwrap();
+                execution_error
+                    .set(err)
+                    .expect("Execution error already set");
                 None
             }
             VmExecutionResult::Ok {
