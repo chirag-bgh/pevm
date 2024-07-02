@@ -4,10 +4,11 @@ use alloy_rpc_types::Receipt;
 use defer_drop::DeferDrop;
 use revm::{
     primitives::{
-        AccountInfo, Address, BlockEnv, Bytecode, CfgEnv, EVMError, Env, InvalidTransaction,
-        ResultAndState, SpecId, TransactTo, TxEnv, B256, U256,
+        AccountInfo, Address, BlockEnv, Bytecode, CfgEnv, CfgEnvWithHandlerCfg, EVMError, Env,
+        EnvWithHandlerCfg, InvalidTransaction, ResultAndState, SpecId, TransactTo, TxEnv, B256,
+        U256,
     },
-    Context, Database, Evm, EvmContext, Handler,
+    Context, Database, Evm, EvmBuilder, EvmContext, Handler,
 };
 
 use crate::{
@@ -470,7 +471,7 @@ impl<'a, S: Storage> Vm<'a, S> {
 
         // Execute
         let mut db = VmDb::new(self, &tx_idx, from, from_hash, to, to_hash, is_maybe_lazy);
-        match execute_tx(
+        match execute_tx_pbb(
             &mut db,
             self.chain,
             self.spec_id,
@@ -650,4 +651,23 @@ pub(crate) fn execute_tx<DB: Database>(
     // TODO: Support OP handlers
     let handler = Handler::mainnet_with_spec(spec_id, with_reward_beneficiary);
     Evm::new(context, handler).transact()
+}
+
+pub(crate) fn execute_tx_pbb<DB: Database>(
+    db: DB,
+    chain: Chain,
+    spec_id: SpecId,
+    block_env: BlockEnv,
+    tx: TxEnv,
+    _with_reward_beneficiary: bool,
+) -> Result<ResultAndState, EVMError<DB::Error>> {
+    let cfg = CfgEnv::default().with_chain_id(chain.id());
+    let cfgenvwithhandlercfg = CfgEnvWithHandlerCfg::new_with_spec_id(cfg, spec_id);
+
+    let env = EnvWithHandlerCfg::new_with_cfg_env(cfgenvwithhandlercfg, block_env.clone(), tx);
+
+    let mut evm = EvmBuilder::default().with_db(db).build();
+    evm.modify_spec_id(env.spec_id());
+    evm.context.evm.env = env.env;
+    evm.transact()
 }
