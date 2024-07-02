@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
     num::NonZeroUsize,
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     thread,
 };
 
@@ -10,7 +10,8 @@ use alloy_chains::Chain;
 use alloy_primitives::{Address, U256};
 use alloy_rpc_types::{Block, BlockTransactions};
 use defer_drop::DeferDrop;
-use revm::{db::CacheDB, primitives::SpecId, DatabaseCommit};
+use log::info;
+use revm::{db::CacheDB, handler::execution, primitives::SpecId, DatabaseCommit};
 
 pub use revm::primitives::{BlobExcessGasAndPrice, BlockEnv, TransactTo, TxEnv};
 pub use SpecId::CANCUN;
@@ -94,6 +95,7 @@ pub fn execute<S: Storage + Send + Sync>(
     };
     // TODO: Continue to fine tune this condition.
     if force_sequential || tx_envs.len() < 4 || block.header.gas_used <= 650_000 {
+        info!("Falling back to sequential execution.");
         execute_revm_sequential(storage, chain, spec_id, block_env, tx_envs)
     } else {
         execute_revm(
@@ -121,20 +123,23 @@ pub fn execute_revm<S: Storage + Send + Sync>(
     user_type: PevmUserType,
 ) -> PevmResult {
     if txs.is_empty() {
+        info!("No transactions to execute.");
         return Ok(Vec::new());
     }
-
     // Preprocess dependencies and fall back to sequential if there are too many
     let beneficiary_address = block_env.coinbase;
     let Some((scheduler, max_concurrency_level)) =
         preprocess_dependencies(&beneficiary_address, &txs)
     else {
+        info!("Falling back to sequential execution.");
         return execute_revm_sequential(storage, chain, spec_id, block_env, txs);
     };
 
     // Preprocess locations
     // TODO: Move to a dedicated preprocessing module with preprocessing deps
     let block_size = txs.len();
+    info!("txs len: {:?}", txs.len());
+
     let hasher = ahash::RandomState::new();
     let beneficiary_location_hash = hasher.hash_one(MemoryLocation::Basic(beneficiary_address));
     // TODO: Estimate more locations based on sender, to, etc.
@@ -171,7 +176,7 @@ pub fn execute_revm<S: Storage + Send + Sync>(
         txs,
     );
 
-    let mut execution_error = OnceLock::new();
+    let execution_error = Arc::new(Mutex::new(None::<ExecutionError>));
     let execution_results: Vec<_> = (0..block_size).map(|_| Mutex::new(None)).collect();
 
     // TODO: Better thread handling
@@ -194,12 +199,14 @@ pub fn execute_revm<S: Storage + Send + Sync>(
                         }
                     };
 
-                    if execution_error.get().is_some() {
+                    if execution_error.lock().unwrap().is_some() {
                         match user_type {
                             PevmUserType::BlockBuilder => {
+                                info!("Skipping transaction due to execution error.");
                                 continue;
                             }
                             PevmUserType::Verifier => {
+                                info!("Exiting early due to execution error.");
                                 break;
                             }
                             PevmUserType::Testers => {
@@ -216,9 +223,11 @@ pub fn execute_revm<S: Storage + Send + Sync>(
         }
     });
 
-    if let Some(err) = execution_error.take() {
-        return Err(PevmError::ExecutionError(format!("{err:?}")));
-    }
+    info!("Execution results: {:?}", execution_results.len());
+
+    // if let Some(err) = execution_error.lock().unwrap(). {
+    //     return Err(PevmError::ExecutionError(format!("{err:?}")));
+    // }
 
     // We fully evaluate the final beneficiary account's and raw transfer recpipients'
     // balance that may have been atomically updated to avoid dependencies.
@@ -234,19 +243,13 @@ pub fn execute_revm<S: Storage + Send + Sync>(
     let mut fully_evaluated_results = Vec::with_capacity(block_size);
     let mut cumulative_gas_used: u128 = 0;
     for (mutex, (_, beneficiary_value)) in execution_results.into_iter().zip(beneficiary_values) {
-        let mut execution_result = mutex.into_inner().unwrap().unwrap();
-
-        // do this if user type is BlockBuilder
-        match user_type {
-            PevmUserType::BlockBuilder => {
-                if cumulative_gas_used + execution_result.receipt.cumulative_gas_used
-                    > block_env.clone().gas_limit.to_string().parse().unwrap()
-                {
-                    continue;
-                }
+        let mut execution_result = match mutex.into_inner().unwrap() {
+            Some(result) => result,
+            None => {
+                info!("Execution result is None");
+                continue;
             }
-            _ => {}
-        }
+        };
 
         // Cumulative gas
         cumulative_gas_used += execution_result.receipt.cumulative_gas_used;
@@ -335,7 +338,10 @@ pub fn execute_revm<S: Storage + Send + Sync>(
             }
         }
     }
-
+    info!(
+        "Fully evaluated results: {:?}",
+        fully_evaluated_results.len()
+    );
     Ok(fully_evaluated_results)
 }
 
@@ -362,10 +368,15 @@ pub fn execute_revm_sequential<S: Storage>(
 
                 cumulative_gas_used += execution_result.receipt.cumulative_gas_used;
                 execution_result.receipt.cumulative_gas_used = cumulative_gas_used;
+                info!("Execution result: {:?}", execution_result);
 
                 results.push(execution_result);
             }
-            Err(err) => return Err(PevmError::ExecutionError(format!("{err:?}"))),
+            // Err(err) => return Err(PevmError::ExecutionError(format!("{err:?}"))),
+            Err(err) => {
+                info!("Execution error: {:?}", err);
+                continue;
+            }
         }
     }
     Ok(results)
@@ -477,7 +488,7 @@ fn try_execute<S: Storage>(
     mv_memory: &MvMemory,
     vm: &Vm<S>,
     scheduler: &Scheduler,
-    execution_error: &OnceLock<ExecutionError>,
+    execution_error: &Mutex<Option<ExecutionError>>,
     execution_results: &[Mutex<Option<PevmTxExecutionResult>>],
     tx_version: TxVersion,
 ) -> Option<Task> {
@@ -494,9 +505,12 @@ fn try_execute<S: Storage>(
             }
             VmExecutionResult::ExecutionError(err) => {
                 // TODO: Better error handling
-                execution_error
-                    .set(err)
-                    .expect("Execution error already set");
+                let mut error_lock = execution_error.lock().unwrap();
+                info!(
+                    "Txs id: {:?}, Execution error: {:?}",
+                    tx_version.tx_idx, err
+                );
+                *error_lock = Some(err);
                 None
             }
             VmExecutionResult::Ok {

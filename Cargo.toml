@@ -30,6 +30,9 @@ alloy-transport-http = { git = "https://github.com/alloy-rs/alloy", rev = "a4bb5
 reqwest = "0.12.4"
 tokio = { version = "1.38.0", features = ["rt-multi-thread"] }
 
+log = "0.4"
+env_logger = "0.10"
+
 [dev-dependencies]
 alloy-consensus = { git = "https://github.com/alloy-rs/alloy", rev = "a4bb5f0be3eec5c8679bdab93c1482df38ba8509" }
 alloy-rlp = "0.3.5"
